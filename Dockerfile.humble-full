@@ -1,0 +1,152 @@
+FROM althack/ros2:humble-full
+
+ENV TZ=Europe/Rome
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone 
+USER root
+
+# Install OpenGL and GLX required for NVIDIA hardware acceleration
+RUN apt-get update && apt-get install -y \
+    libglvnd0 \
+    libgl1 \
+    libglx0 \
+    libegl1 \
+    libxext6 \
+    libx11-6 \
+    libxcb-glx0 \
+    libxcb-dri2-0 \
+    libxcb-dri3-0 \
+    libxcb-present0 \
+    mesa-utils
+
+RUN echo "/usr/lib/x86_64-linux-gnu/nvidia/current" > /etc/ld.so.conf.d/nvidia.conf && ldconfig
+
+# Force the environment variable inside the image just to be safe
+ENV NVIDIA_DRIVER_CAPABILITIES=all,graphics,display,compute,utility
+
+# install zsh and oh-my-zsh
+RUN apt update && apt install -y zsh git
+RUN wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh && chmod +x install.sh && ls
+RUN ./install.sh
+RUN git clone https://github.com/zsh-users/zsh-autosuggestions.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions && \
+    apt install -y zsh-syntax-highlighting
+
+# configure zsh
+RUN echo 'export ZSH=$HOME/.oh-my-zsh' >> ~/.zshrc && \
+    echo 'ZSH_THEME="ys"' >> ~/.zshrc && \
+    echo 'plugins=(git zsh-autosuggestions)' >> ~/.zshrc && \
+    echo 'source $ZSH/oh-my-zsh.sh' >> ~/.zshrc && \
+    echo 'source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh' >> ~/.zshrc
+
+# install useful tools
+RUN apt install -y tmux nano
+
+RUN rm -rf /var/lib/apt/lists/*
+
+# install clang tools
+RUN wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 18 all
+RUN update-alternatives --install /usr/bin/clangd clangd /usr/bin/clangd-18 100 \
+    && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100 \
+    && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100 \
+    && update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-18 100 \
+    && update-alternatives --install /usr/bin/run-clang-tidy run-clang-tidy /usr/bin/run-clang-tidy-18 100
+ENV CC=/usr/bin/clang-18
+ENV CXX=/usr/bin/clang++-18
+
+# install build tools
+RUN apt-get install -y build-essential gcc-9  g++-9 gdb  cmake  ninja-build
+
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 100
+
+# install unitree_sdk2 libraries
+RUN apt update && apt-get install -y libyaml-cpp-dev libeigen3-dev
+
+# install unitree_ros2 libraries
+RUN echo "source /opt/ros/humble/setup.sh" >> ~/.zshrc 
+RUN apt install -y ros-humble-rmw-cyclonedds-cpp ros-humble-rosidl-generator-dds-idl
+
+#install unitree_mujoco dependencies
+RUN apt install -y libyaml-cpp-dev libspdlog-dev libboost-all-dev libglfw3-dev
+
+# install unitree_sdk2
+WORKDIR /workspace
+RUN git clone --recursive https://github.com/unitreerobotics/unitree_sdk2.git
+WORKDIR /workspace/unitree_sdk2
+RUN mkdir build
+WORKDIR /workspace/unitree_sdk2/build
+RUN cmake .. -DCMAKE_INSTALL_PREFIX=/opt/unitree_robotics && \
+    make install
+
+# install and build unitree_ros2
+WORKDIR /root
+RUN git clone --recursive https://github.com/unitreerobotics/unitree_ros2.git
+WORKDIR /root/unitree_ros2
+#RUN . /opt/ros/humble/setup.sh && \
+#    colcon build
+
+# build cyclonedds
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+WORKDIR /root/unitree_ros2/cyclonedds_ws/src
+RUN git clone https://github.com/ros2/rmw_cyclonedds -b humble && \
+    git clone https://github.com/eclipse-cyclonedds/cyclonedds -b releases/0.10.x
+WORKDIR /root/unitree_ros2
+RUN colcon build --packages-select cyclonedds
+RUN . /opt/ros/humble/setup.sh && \
+    colcon build
+
+#WORKDIR /root/unitree_ros2/cyclonedds_ws
+#RUN colcon build && \
+#-DCMAKE_EXPORT_COMPILE_COMMANDS=ON --packages-select unitree_go unitree_hg unitree_api unitree_ros2_example && \
+#    . ./install/setup.sh
+
+# install unitree_mujoco
+WORKDIR /workspace
+RUN git clone --recursive https://github.com/unitreerobotics/unitree_mujoco.git
+WORKDIR /workspace/unitree_mujoco/simulate
+RUN wget -O mujoco.tar.gz https://github.com/google-deepmind/mujoco/releases/download/3.3.7/mujoco-3.3.7-linux-x86_64.tar.gz && \
+    mkdir -p ~/.mujoco && \    
+    tar -xzf mujoco.tar.gz -C ~/.mujoco && \
+    ln -s ~/.mujoco/mujoco-3.3.7 mujoco
+RUN mkdir build
+WORKDIR /workspace/unitree_mujoco/simulate/build
+RUN cmake .. && \
+    make -j4
+    
+# install ros2 dependencies
+RUN apt install -y ros-humble-pcl-ros \
+		ros-humble-pcl-conversions \
+		ros-humble-visualization-msgs
+# install eigen
+RUN apt install -y libeigen3-dev
+
+# install livox ros driver 2
+WORKDIR /workspace
+RUN git clone https://github.com/palingenesys/livox_ros_driver2.git ws_livox/src/livox_ros_driver2
+RUN git clone https://github.com/palingenesys/Livox-SDK2.git
+WORKDIR /workspace/Livox-SDK2
+RUN mkdir build
+WORKDIR /workspace/Livox-SDK2/build
+RUN export CC=/usr/bin/gcc && export CXX=/usr/bin/g++ && \
+    cmake .. && make -j && make install
+WORKDIR /workspace/ws_livox/src/livox_ros_driver2
+RUN export CC=/usr/bin/gcc && export CXX=/usr/bin/g++ && \
+    . /opt/ros/humble/setup.sh && \
+    ./build.sh humble
+
+# clone and install pointlio
+WORKDIR /workspace
+RUN mkdir -p point_lio_unilidar/src
+WORKDIR /workspace/point_lio_unilidar/src
+RUN git clone https://github.com/palingenesys/point_lio_ros2.git
+WORKDIR /workspace/point_lio_unilidar
+RUN export CC=/usr/bin/gcc && export CXX=/usr/bin/g++ && \
+    . /opt/ros/humble/setup.sh && \
+    . /workspace/ws_livox/install/setup.sh && \
+    colcon build --symlink-install
+
+WORKDIR /workspace
+
+#CMD ["zsh"]
+ENV CC=gcc
+ENV CXX=g++
+CMD ["/bin/bash", "-c", "while sleep 1000; do:; done"]

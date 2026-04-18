@@ -1,0 +1,76 @@
+services:
+  go2-humble:
+    profiles: ["humble"]
+    shm_size: '2gb'
+    volumes:
+      - ./shared:/shared
+      - ./humble_ws:/ws:cached
+      - ../Ros2-go2/go2_ws/src/unitree-go2-ros2:/Ros2-go2:rw
+      - ../anubi/:/anubi:rw
+      - ../Go2_navigation/:/Go2_navigation:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /root/.gazebo/models/:/root/.gazebo/models/
+      - /var/run/docker.sock:/var/run/docker.sock
+      - $HOME/.Xauthority:/tmp/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=/tmp/.Xauthority
+      - QT_X11_NO_MITSHM=1
+      - ROS_DISTRO=humble
+      - __NV_PRIME_RENDER_OFFLOAD=1
+      - __GLX_VENDOR_LIBRARY_NAME=nvidia
+      - NVIDIA_DRIVER_CAPABILITIES=all,graphics,display,compute,utility
+      - LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/nvidia/current:/usr/lib/x86_64-linux-gnu:/opt/ros/humble/lib
+    cap_add:
+      - SYS_PTRACE
+    command: /bin/sh -c "while sleep 1000; do :; done"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, graphics, display, compute, utility]
+    build:
+      context: .
+      dockerfile: Dockerfile.humble
+    privileged: true
+    network_mode: "host"
+    tty: true
+  go2-foxy:
+    profiles: ["foxy"]
+    volumes:
+      - ./shared:/shared
+      - ./foxy_ws:/ws:cached
+      - ../Ros2-go2/go2_ws/src/unitree-go2-ros2:/Ros2-go2:rw
+      - ../Go2_navigation/:/Go2_navigation:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /root/.gazebo/models/:/root/.gazebo/models/
+      - /var/run/docker.sock:/var/run/docker.sock
+      - $HOME/.Xauthority:/tmp/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=/tmp/.Xauthority
+      - QT_X11_NO_MITSHM=1
+      - ROS_DISTRO=foxy
+      - __NV_PRIME_RENDER_OFFLOAD=1
+      - __GLX_VENDOR_LIBRARY_NAME=nvidia
+      - NVIDIA_DRIVER_CAPABILITIES=all,graphics,display,compute,utility
+      - LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/nvidia/current:/usr/lib/x86_64-linux-gnu:/opt/ros/foxy/lib
+    cap_add:
+      - SYS_PTRACE
+    command: /bin/sh -c "while sleep 1000; do :; done"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, graphics, display, compute, utility]
+    build:
+      context: .
+      dockerfile: Dockerfile.foxy
+    privileged: true
+    network_mode: "host"
+    tty: true
+  

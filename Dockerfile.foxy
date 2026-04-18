@@ -1,0 +1,102 @@
+FROM althack/ros2:foxy-full
+
+ENV TZ=Europe/Rome
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+USER root
+
+# Fix per la chiave GPG scaduta di ROS 2
+RUN apt-get update || true \
+    && apt-get install -y curl gnupg2 \
+    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | apt-key add -
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    zsh git wget tmux nano zsh-syntax-highlighting \
+    build-essential gcc g++ gdb cmake ninja-build \
+    libyaml-cpp-dev libeigen3-dev libspdlog-dev libboost-all-dev libglfw3-dev libopencv-dev \
+    ros-foxy-rmw-cyclonedds-cpp \
+    ros-foxy-rosidl-generator-dds-idl \
+    ros-foxy-pcl-ros \
+    ros-foxy-pcl-conversions \
+    ros-foxy-visualization-msgs \
+    ros-foxy-tf2-sensor-msgs \
+    ros-foxy-cv-bridge \
+    ros-foxy-std-srvs \
+    ros-foxy-perception-pcl ros-foxy-sensor-msgs-py ros-foxy-tf-transformations ros-foxy-joy \
+    ros-foxy-rmw-cyclonedds-cpp ros-foxy-rosidl-generator-dds-idl python3-colcon-common-extensions \
+    python-is-python3 \
+    ros-foxy-xacro \
+    ros-foxy-robot-state-publisher \
+    ros-foxy-joint-state-publisher \
+    ros-foxy-robot-localization \
+    ros-foxy-ros2controlcli \
+    ros-foxy-navigation2 \
+    ros-foxy-nav2-bringup
+
+RUN  pip install transforms3d pyyaml
+
+# Gazebo 11 (Classic) for ROS2 Foxy
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    gazebo11 \
+    libgazebo11-dev \
+    ros-foxy-gazebo-ros-pkgs \
+    ros-foxy-gazebo-ros2-control \
+    ros-foxy-gazebo-plugins \
+    ros-foxy-ros2-controllers \
+    ros-foxy-ros2-control \
+    ros-foxy-joint-state-controller \
+    ros-foxy-joint-trajectory-controller \
+    ros-foxy-effort-controllers \
+    ros-foxy-velodyne \
+    ros-foxy-velodyne-gazebo-plugins \
+    ros-foxy-velodyne-description \
+    && rm -rf /var/lib/apt/lists/*
+
+# # Configurazione zsh e oh-my-zsh
+# RUN wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh && chmod +x install.sh && ./install.sh || true
+# RUN git clone https://github.com/zsh-users/zsh-autosuggestions.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
+# RUN echo 'export ZSH=$HOME/.oh-my-zsh' >> ~/.zshrc && \
+#     echo 'ZSH_THEME="ys"' >> ~/.zshrc && \
+#     echo 'plugins=(git zsh-autosuggestions)' >> ~/.zshrc && \
+#     echo 'source $ZSH/oh-my-zsh.sh' >> ~/.zshrc && \
+#     echo 'source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh' >> ~/.zshrc && \
+#     echo 'source /opt/ros/foxy/setup.sh' >> ~/.zshrc
+
+# Installazione unitree_sdk2
+WORKDIR /tools
+RUN git clone --recursive https://github.com/unitreerobotics/unitree_sdk2.git
+WORKDIR /tools/unitree_sdk2/build
+RUN cmake .. -DCMAKE_INSTALL_PREFIX=/opt/unitree_robotics && make install
+
+# Installazione e build di unitree_ros2 con cyclonedds
+WORKDIR /tools
+RUN git clone --recursive https://github.com/unitreerobotics/unitree_ros2.git
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+WORKDIR /tools/unitree_ros2/cyclonedds_ws/src
+RUN git clone https://github.com/ros2/rmw_cyclonedds -b foxy && \
+    git clone https://github.com/eclipse-cyclonedds/cyclonedds -b releases/0.10.x
+WORKDIR /tools/unitree_ros2
+RUN /bin/bash -c "colcon build --packages-select cyclonedds"
+RUN /bin/bash -c "source /opt/ros/foxy/setup.sh && colcon build"
+
+# Installazione livox sdk2 e livox ros driver 2
+#WORKDIR /workspace
+#RUN git clone https://github.com/palingenesys/livox_ros_driver2.git ws_livox/src/livox_ros_driver2
+#RUN git clone https://github.com/palingenesys/Livox-SDK2.git
+#WORKDIR /workspace/Livox-SDK2/build
+#RUN cmake .. && make -j && make install
+#WORKDIR /workspace/ws_livox/src/livox_ros_driver2
+#RUN /bin/bash -c "source /opt/ros/foxy/setup.sh && ./build.sh foxy"
+
+# Installazione point_lio
+# WORKDIR /ws/point_lio_unilidar/src
+# RUN git clone https://github.com/palingenesys/point_lio_ros2.git
+# WORKDIR /ws/point_lio_unilidar
+# #RUN /bin/bash -c "source /opt/ros/foxy/setup.sh && source /workspace/ws_livox/install/setup.sh && colcon build --symlink-install"
+# RUN /bin/bash -c "source /opt/ros/foxy/setup.sh && colcon build --symlink-install"
+
+WORKDIR /ws
+ENV CC=gcc
+ENV CXX=g++
+RUN echo 'source /opt/ros/${ROS_DISTRO}/setup.bash' >> /root/.bashrc
+CMD ["/bin/bash", "-c", "while sleep 1000; do :; done"]
