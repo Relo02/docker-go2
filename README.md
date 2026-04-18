@@ -15,5 +15,5 @@ cd ~/docker-go2/
 docker compose up go2-humble -d
 
 # Then start the container with humble or foxy distro
-./run.sh humble
+docker compose exec -it go2-humble bash
 ```
