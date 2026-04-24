@@ -151,3 +151,4 @@ ENV CXX=g++
 RUN echo 'source /opt/ros/${ROS_DISTRO}/setup.bash' >> /root/.bashrc
 
 CMD ["/bin/bash", "-c", "while sleep 1000; do:; done"]
+
